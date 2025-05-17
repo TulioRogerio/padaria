@@ -9,7 +9,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///padaria.db"
 app.config["SECRET_KEY"] ="MinhaChave10000#"
 app.config["SIMPLELOGIN_USERNAME"] = "tulio"
 app.config["SIMPLELOGIN_PASSWORD"] = "7410git"
-db = SQLAlchemy()
+db = SQLAlchemy(app)
 db.init_app(app)
 SimpleLogin(app)
 
