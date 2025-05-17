@@ -1,123 +1,143 @@
-from flask import Flask
-from flask import render_template, request, redirect
+from flask import Flask, render_template, request, redirect
 from flask_sqlalchemy import SQLAlchemy
 from flask_simplelogin import SimpleLogin, login_required
 import os
 
+# ───────────────────────────────
+# Configuração da aplicação
+# ───────────────────────────────
 app = Flask(__name__)
+
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///padaria.db"
-app.config["SECRET_KEY"] ="MinhaChave10000#"
-app.config["SIMPLELOGIN_USERNAME"] = "tulio"
-app.config["SIMPLELOGIN_PASSWORD"] = "7410git"
-db = SQLAlchemy(app)
-db.init_app(app)
-SimpleLogin(app)
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "MinhaChave10000#")  # troque em produção
 
-def validar_imagem(nome_imagem):
-    """Desafio para você!"""
-    ...
+# ───────────────────────────────
+# Banco de dados
+# ───────────────────────────────
+db = SQLAlchemy(app)          # ✔️  única inicialização
 
-class Product(db.Model):
-    __tablename__ = 'produto'
-    id = db.Column(db.Integer, primary_key=True)
-    nome = db.Column(db.String(100), nullable=False)
-    descricao = db.Column(db.String(500))
-    ingredientes = db.Column(db.String(500))
-    origem = db.Column(db.String(100))
-    imagem = db.Column(db.String(100))
-
-    def __init__(self, 
-                 nome: str, 
-                 descricao: str, 
-                 ingredientes: str,
-                 origem: str,
-                 imagem: str ) -> None:
-        self.nome = nome
-        self.descricao = descricao
-        self.ingredientes = ingredientes
-        self.origem = origem
-        self.imagem = imagem
-                     
+# ───────────────────────────────
+# Autenticação (Flask-SimpleLogin)
+# ───────────────────────────────
 def checker(user):
-    print("==> Tentativa:", user)
-    print("==> Esperado :", os.getenv("SL_USER"), os.getenv("SL_PASS"))
+    """Valida usuário/senha contra variáveis de ambiente ou valores-padrão."""
+    expected_user = os.getenv("SL_USER", "tulio")
+    expected_pass = os.getenv("SL_PASS", "7410git")
     return (
-        user.get("username") == os.getenv("SL_USER")
-        and user.get("password") == os.getenv("SL_PASS")
+        user.get("username") == expected_user
+        and user.get("password") == expected_pass
     )
 
-SimpleLogin(app, login_checker=checker)
+SimpleLogin(app, login_checker=checker)   # ✔️  única chamada
 
+# ───────────────────────────────
+# Modelos
+# ───────────────────────────────
+class Product(db.Model):
+    __tablename__ = "produto"
+
+    id          = db.Column(db.Integer, primary_key=True)
+    nome        = db.Column(db.String(100),  nullable=False)
+    descricao   = db.Column(db.String(500))
+    ingredientes= db.Column(db.String(500))
+    origem      = db.Column(db.String(100))
+    imagem      = db.Column(db.String(100))
+
+    def __init__(self, nome, descricao, ingredientes, origem, imagem):
+        self.nome         = nome
+        self.descricao    = descricao
+        self.ingredientes = ingredientes
+        self.origem       = origem
+        self.imagem       = imagem
+
+# ───────────────────────────────
+# Rotas
+# ───────────────────────────────
 @app.route("/")
 @login_required
 def home():
     return render_template("index.html")
+
 
 @app.route("/listar_produtos", methods=["GET", "POST"])
 @login_required
 def listar_produtos():
     if request.method == "POST":
         termo = request.form["pesquisa"]
-        resultado = db.session.execute(db.select(Product).filter(Product.nome.like(f'%{termo}%'))).scalars()
-        return render_template('produtos.html', produtos=resultado)
+        produtos = (
+            db.session.execute(
+                db.select(Product).filter(Product.nome.like(f"%{termo}%"))
+            ).scalars()
+        )
     else:
         produtos = db.session.execute(db.select(Product)).scalars()
-        return render_template('produtos.html', produtos=produtos)
+    return render_template("produtos.html", produtos=produtos)
+
 
 @app.route("/cadastrar_produto", methods=["GET", "POST"])
 @login_required
 def cadastrar_produto():
     if request.method == "POST":
-        status = {"type": "sucesso", "message": "Produto cadastrado com sucesso!"}
-        dados = request.form
-        imagem = request.files['imagem']
+        status  = {"type": "sucesso", "message": "Produto cadastrado com sucesso!"}
+        dados   = request.form
+        imagem  = request.files["imagem"]
         try:
-            produto = Product(dados['nome'], 
-                            dados['descricao'],
-                            dados['ingredientes'],
-                            dados['origem'],
-                            imagem.filename)
-            imagem.save(os.path.join('static/imagens', imagem.filename))
+            produto = Product(
+                dados["nome"],
+                dados["descricao"],
+                dados["ingredientes"],
+                dados["origem"],
+                imagem.filename,
+            )
+            imagem.save(os.path.join("static/imagens", imagem.filename))
             db.session.add(produto)
             db.session.commit()
-        except:
-            status = {"type": "erro", "message": f"Houve um problema ao cadastrar o produto {dados['nome']}!"}
+        except Exception as e:
+            status = {
+                "type": "erro",
+                "message": f"Problema ao cadastrar {dados['nome']}! - {e}",
+            }
+        return render_template("cadastrar.html", status=status)
 
-        return render_template('cadastrar.html', status=status)
-    else:
-        return render_template("cadastrar.html")
-    
+    return render_template("cadastrar.html")
+
+
 @app.route("/editar_produtos/<int:id>", methods=["GET", "POST"])
 @login_required
 def editar_produto(id):
-    if request.method == "POST":
-        dados_editados = request.form
-        imagem = request.files['imagem']
-        produto = db.session.execute(db.select(Product).filter(Product.id == id)).scalar()
+    produto = db.get_or_404(Product, id)
 
-        produto.nome = dados_editados["nome"]
-        produto.descricao = dados_editados["descricao"]
-        produto.ingredientes = dados_editados["ingredientes"]
-        produto.origem = dados_editados["origem"]
+    if request.method == "POST":
+        dados   = request.form
+        imagem  = request.files["imagem"]
+
+        produto.nome         = dados["nome"]
+        produto.descricao    = dados["descricao"]
+        produto.ingredientes = dados["ingredientes"]
+        produto.origem       = dados["origem"]
 
         if imagem.filename:
             produto.imagem = imagem.filename
+            imagem.save(os.path.join("static/imagens", imagem.filename))
 
         db.session.commit()
         return redirect("/listar_produtos")
-    else:
-        produto_editado = db.session.execute(db.select(Product).filter(Product.id == id)).scalar()
-        return render_template("editar.html",produto=produto_editado)
+
+    return render_template("editar.html", produto=produto)
+
 
 @app.route("/deletar_produto/<int:id>")
 @login_required
 def deletar_produto(id):
-    produto_deletado = db.session.execute(db.select(Product).filter(Product.id == id)).scalar()
-    db.session.delete(produto_deletado)
+    produto = db.get_or_404(Product, id)
+    db.session.delete(produto)
     db.session.commit()
     return redirect("/listar_produtos")
 
-if __name__ == '__main__':
+# ───────────────────────────────
+# Bootstrap
+# ───────────────────────────────
+if __name__ == "__main__":          # executado só localmente
     with app.app_context():
         db.create_all()
-        #app.run(debug=True)
+#    app.run(debug=True)
