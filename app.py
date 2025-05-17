@@ -39,12 +39,12 @@ class Product(db.Model):
         self.imagem = imagem
                      
 def checker(user):
-    # Mostra no log o que chegou e o que é esperado
     print("==> Tentativa:", user)
     print("==> Esperado :", os.getenv("SL_USER"), os.getenv("SL_PASS"))
     return (
-        user.get("username") == os.getenv("SL_USER") and
-        user.get("password") == os.getenv("SL_PASS")
+        user.get("username") == os.getenv("SL_USER")
+        and user.get("password") == os.getenv("SL_PASS")
+    )
 
 SimpleLogin(app, login_checker=checker)
 
