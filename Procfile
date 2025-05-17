@@ -1,1 +1,1 @@
-Web: gunicorn app:app --wokers 3
+web: python app.py
